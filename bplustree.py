@@ -38,10 +38,48 @@ class Node:
 class BPlusTree:
     """construct a tree with empty root node, or with a given root"""
 
-    def __init__(self, order: int, root: Node = None):
+    def __init__(self, order: int, root: Node = None, values: List[int] = None):
         self.order: int = order
         self.root: Node = root if root else Node(node_type=NodeType.ROOT)
+        if values:
+            self.root = self.construct_from_values(values)
+
         self.constraint: Dict = gen_constraint(self.order)
+
+    def dense_construct(self, nodes: List[Node]):
+        """ 1. extract key values from the given list
+            2. split to nodes if num of keys exceed the order
+        """
+        # with num_nodes, it requires num_nodes-1 parent keys
+        parent_keys = [node.keys[0] for node in nodes[1:]]
+        num_nodes = ceil(len(parent_keys) / self.order)  # split
+        parent_nodes = [Node(keys=parent_keys[self.order * i:self.order * (i + 1)],
+                             pointers=nodes[(self.order + 1) * i:(self.order + 1) * (i + 1)],
+                             node_type=NodeType.NON_LEAF)
+                        for i in range(num_nodes)]
+        if len(parent_nodes) == 1:
+            root = parent_nodes[0]
+            root.node_type = NodeType.ROOT
+            return root
+        else:
+            return self.dense_construct(parent_nodes)
+
+    def construct_from_values(self, values: List[int]) -> Node:
+        n = len(values)
+        values.sort()
+        num_nodes = ceil(n / self.order)
+        leaves = [Node(keys=values[self.order * i:self.order * (i + 1)],
+                       payload=[str(value) for value in values[self.order * i:self.order * (i + 1)]],
+                       node_type=NodeType.LEAF)
+                  for i in range(num_nodes)]
+
+        for i in range(len(leaves) - 1):
+            leaves[i].sequence_pointer = leaves[i + 1]
+
+        if num_nodes == 1:
+            return leaves[0]  # root
+        else:
+            return self.dense_construct(leaves)
 
     def met_constraint(self, node: Node) -> bool:
         """perform constraint check for the given node and all its child nodes """

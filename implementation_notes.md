@@ -36,3 +36,13 @@ it seems that treating single node root as leaf would simplify the code.
 for each node, #pointers = #keys + 1
 p k p k p
 with same index, pointers[idx] points to nodes with value smaller than keys[idx]
+
+# construct b plus tree from given list of values
+## Dense B Plus Tree
+Suppose a list of values with length k are provided, and the b plus tree to be constructed is of order n.  
+There must be ceil(k/n) leaf nodes to hold all the values.
+Suppose f = ceil(k/n) as the number of leaf nodes, then there are p1 = f - 1 parent nodes.
+parent node of key i contains first value of leaf node i+1
+If p1 > n, then divide p1 to multiple nodes, p2 = ceil(p1/n) nodes.
+Repeat such process, till pi <= n, then treat pi as the root node of the constructed b plus tree.
+
