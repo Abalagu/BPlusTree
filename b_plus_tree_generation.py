@@ -2,7 +2,7 @@
 from bplustree import Node, NodeType, BPlusTree
 
 
-def get_b_plus_tree(key)->BPlusTree:
+def get_b_plus_tree(key) -> BPlusTree:
     trees = {
         'l2': BPlusTree(3,
                         Node([17, 29], [
@@ -26,3 +26,5 @@ root = tree.root
 tree.fill_type(root)
 tree.fill_payload(root)
 tree.add_sequence_pointers()
+tree.search(3)
+ret = tree.range_search(9, 19)

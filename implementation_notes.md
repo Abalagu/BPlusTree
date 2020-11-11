@@ -30,3 +30,9 @@ set sequence pointer between child nodes after adding all the nodes to their par
 
 use hex(id) to print out the memory address of the object
 use this to check if sequence pointer is used correctly.
+
+it seems that treating single node root as leaf would simplify the code.
+
+for each node, #pointers = #keys + 1
+p k p k p
+with same index, pointers[idx] points to nodes with value smaller than keys[idx]

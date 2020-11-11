@@ -71,20 +71,77 @@ class BPlusTree:
         while node is not NodeType.LEAF:
             pass
 
-    def range_search(self, left, right):
+    def range_search(self, left, right, node: Node = None) -> List[str]:
         """return matching elements within closed interval [left, right]
         1. find position for left
         2. direct elements within interval to the output
         3. search terminates when element larger than right is encountered
+        ref: note17, p17
+        note that search procedure returns nothing if the target is not found.
+        However, in range search, one expects to find the smallest element that's larger than the left bound,
+        then continue searching till the right bound.
         """
+        ret = []
+        if not node:
+            node = self.root
 
-        pass
+        leaf = self.search_node(left, node)
+        while leaf:
+            for idx, key in enumerate(leaf.keys):
+                if key < left:
+                    continue
+                elif left <= key <= right:
+                    ret.append(leaf.payload[idx])
+                else:
+                    return ret
+            else:
+                leaf = leaf.sequence_pointer
+        else:
+            return ret
 
-    def search(self, key: int):
-        """search for exact position of key, return the
+    def search_node(self, target: int, node: Node = None) -> Optional[Node]:
+        """given target key value, return the leaf node that possibly contains the value,
+        Such leaf node either contains the value, or should contain if empty space remains within.
+        When entering a leaf node, if a key value smaller than the target is found,
+        then it confirms that such node can hold the target value,
+        assuming that it does not violate the parent constraint.
+        """
+        if not node:  # default to search under the root
+            node = self.root
+
+        if node.node_type is NodeType.LEAF:
+            for idx, key in enumerate(node.keys):
+                if key <= target:
+                    return node
+            else:
+                print("target {} not found.".format(target))
+                return None
+        else:
+            search_range = [-float('inf')] + node.keys + [float('inf')]  # add a dummy infinity number for comparison
+            for idx in range(len(search_range) - 1):
+                if search_range[idx] <= target < search_range[idx + 1]:
+                    return self.search_node(target, node.pointers[idx])
+
+    def search(self, target: int, node: Node = None):
+        """search for exact position of key within the given node, return the
         in actual application, return
+        ref: note17, p4
         """
-        pass
+        if not node:
+            node = self.root
+
+        if node.node_type is NodeType.LEAF:
+            for idx, key in enumerate(node.keys):
+                if key == target:
+                    return node.payload[idx]
+            else:
+                print("target {} not found.".format(target))
+                return None
+        else:
+            search_range = [-float('inf')] + node.keys + [float('inf')]  # add a dummy infinity number for comparison
+            for idx in range(len(search_range) - 1):
+                if search_range[idx] <= target < search_range[idx + 1]:
+                    return self.search(target, node.pointers[idx])
 
     def fill_type(self, node: Node) -> None:
         if node == self.root:
