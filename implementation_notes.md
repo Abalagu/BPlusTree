@@ -38,6 +38,13 @@ p k p k p
 with same index, pointers[idx] points to nodes with value smaller than keys[idx]
 
 # construct b plus tree from given list of values
+## General issues
+https://youtu.be/_nY8yR6iqx4?t=248
+when splitting a leaf, copy the middle value up.
+when splitting an internal node, move the middle value up.
+
+
+
 ## Dense B Plus Tree
 Suppose a list of values with length k are provided, and the b plus tree to be constructed is of order n.  
 There must be ceil(k/n) leaf nodes to hold all the values.
@@ -46,7 +53,19 @@ parent node of key i contains first value of leaf node i+1
 If p1 > n, then divide p1 to multiple nodes, p2 = ceil(p1/n) nodes.
 Repeat such process, till pi <= n, then treat pi as the root node of the constructed b plus tree.
 
+When constructing dense B+ Trees, one problem arise if the given keys are divided in the above discussed way.  
+Suppose order=3, and 7 keys are provided.  The tree that meets the constraint would have leaf nodes distributed as 3+2+2, rather than 3+3+1.  Therefore, when making leaf nodes as full as possible, one should also consider accommodating for the last node.     
+
+Strategy: suppose the number of remaining keys are n.  If order <= n < 2*order, then  
+
+
+
+
+
 ## Sparse B Plus Tree
+
+cases: 
+order of 3
 
 
 # Data Generation
