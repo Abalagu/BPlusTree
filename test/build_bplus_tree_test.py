@@ -7,5 +7,5 @@ num_record = 10000
 samples = gen_record(key_range, num_record)
 
 order = 13
-tree = BPlusTree(order, values=samples)
-ret = tree.range_search(123456, 156789)
+tree = BPlusTree(order, keys=samples)
+# ret = tree.range_search(123456, 156789)

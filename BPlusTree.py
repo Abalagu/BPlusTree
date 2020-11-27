@@ -1,5 +1,6 @@
 # Created by Luming on 11/10/2020 1:47 PM
-from math import ceil
+from __future__ import annotations
+
 from typing import Optional, List, Dict
 
 from BPlusTreeNode import Node, NodeType, get_constraint
@@ -14,111 +15,157 @@ class BPlusTree:
         self.root: Node = root if root else Node(type=NodeType.ROOT)
         self.constraint: Dict = get_constraint(self.order)
         if keys:
-            if self.option == 'dense':
-                self.root = self.dense_construct(keys)
-            elif self.option == 'sparse':
-                self.root = self.sparse_construct(keys)
+            self.root = self.construct(keys, option)
 
     def get_node_dist_sparse(self, num_nodes: int, node_type: NodeType = NodeType.LEAF) -> List[int]:
         """distribute by sparse"""
         remain = num_nodes
-        min_keys = self.constraint[node_type]['min_keys']
-        max_keys = self.constraint[node_type]['max_keys']
-        ret = []
+        if node_type == NodeType.LEAF:
+            lower = self.constraint[node_type]['min_keys']
+        else:
+            lower = self.constraint[node_type]['min_pointers']
 
+        ret = []
         while remain > 0:
-            if remain <= min_keys:  # extreme case, for root only
+            if remain <= lower:  # extreme case, for root only
                 ret.append(remain)
                 remain = 0
-            elif min_keys < remain <= max_keys:
+            # when remain - lower < lower, assigning lower to the current mode will make the remaining node
+            # violate the constraint, therefore it needs to assign all to the current node.
+            elif lower < remain < 2 * lower:
                 ret.append(remain)
                 remain = 0
             else:
-                ret.append(min_keys)
-                remain -= min_keys
+                ret.append(lower)
+                remain -= lower
         else:
             return ret
+
+    def get_node_dist(self, num_keys: int, node_type: NodeType = NodeType.LEAF, option: str = 'dense') -> List[int]:
+        if option == 'dense':
+            leaf_distribution = self.get_node_dist_dense(num_keys, node_type)
+        elif option == 'sparse':
+            leaf_distribution = self.get_node_dist_sparse(num_keys, node_type)
+        else:
+            raise Exception('unknown option {}'.format(option))
+        return leaf_distribution
 
     def get_node_dist_dense(self, num_keys: int, node_type: NodeType = NodeType.LEAF) -> List[int]:
         """ apply for dense construct
         if the remaining keys can be divided by min_keys and max_keys, then
-        example: order of 3, min=2, max=3, if the remaining=4, divide by one having minimal, and the other having the rest
-        otherwise, get a full mount out of the remaining
+        example: order of 3, min=2, max=3, if the remaining=4, divide by one having minimal,
+        and the other having the rest.  otherwise, get a full mount out of the remaining
 
         there are four cases: dense leaf, dense internal, sparse leaf, sparse internal
-        """
 
-        min_keys = self.constraint[node_type]['min_keys']
-        max_keys = self.constraint[node_type]['max_keys']
+        for non-leaf nodes, given n child nodes, there are in total n pointers.
+        n_0, n_1, ..., n_i, ..., n_M nodes.  sum(n_i for all i) = n
+
+        n_i-1 = number of keys.
+
+        distribute these n pointers to make each
+
+        for leaf node, group based on min_keys;
+        for non-leaf node, group based on min_pointers.
+        """
+        if node_type == NodeType.LEAF:
+            lower = self.constraint[node_type]['min_keys']
+            upper = self.constraint[node_type]['max_keys']
+        else:
+            lower = self.constraint[node_type]['min_pointers']
+            upper = self.constraint[node_type]['max_pointers']
 
         remain = num_keys
         ret = []
         while remain > 0:
-            if remain <= max_keys:
+            if remain <= upper:
                 ret.append(remain)
                 remain = 0
-            elif max_keys < remain < min_keys + max_keys:
-                last = min_keys
-                last_but_one = remain - min_keys
+            elif upper < remain < lower + upper:
+                last = lower
+                last_but_one = remain - lower
                 ret.extend([last_but_one, last])
                 remain = 0
             else:
-                ret.append(max_keys)
-                remain -= max_keys
+                ret.append(upper)
+                remain -= upper
         else:
-            # print(ret)
             return ret
 
-    def sparse_construct(self, values: List[int]) -> Node:
-        # n = len(values)
-        # values.sort()
-        # num_nodes =
+    def construct(self, keys: List[int], option: str = 'dense') -> Node:
+        """build dense b+ tree from a provided list of keys.
+        1. build leaf nodes. add sequence pointer
+        2. build parent nodes recursively, until a single node is returned as the root.
+        """
+        keys.sort()
+        leaf_distribution = self.get_node_dist(len(keys), NodeType.LEAF, option)
+        leaves = []
+        start = 0
+        for count in leaf_distribution:
+            end = start + count
+            new_node = Node(keys=keys[start:end],
+                            payload=[str(key) for key in keys[start:end]],
+                            type=NodeType.LEAF,
+                            order=self.order)
+            leaves.append(new_node)
+            start = end
 
-        pass
+        for i in range(len(leaves) - 1):
+            leaves[i].sequence_pointer = leaves[i + 1]
 
-    def dense_construct_parents(self, nodes: List[Node]) -> Node:
+        num_nodes = len(leaf_distribution)
+        if num_nodes == 1:
+            return leaves[0]
+        else:
+            return self.construct_parents(leaves, option)
+
+    def construct_parents(self, nodes: List[Node], option: str = 'dense') -> Node:
         """ 1. extract key values from the given list
             2. split to nodes if num of keys exceed the order
         """
         # with num_nodes, it requires num_nodes-1 parent keys
-        parent_keys = [node.keys[0] for node in nodes[1:]]
-        num_nodes = ceil(len(parent_keys) / self.order)  # split
-        parent_nodes = [Node(keys=parent_keys[self.order * i:self.order * (i + 1)],
-                             pointers=nodes[(self.order + 1) * i:(self.order + 1) * (i + 1)],
-                             type=NodeType.NON_LEAF)
-                        for i in range(num_nodes)]
+        pointer_distribution = self.get_node_dist(len(nodes), NodeType.NON_LEAF, option)
+        parent_nodes = []
+        start = 0
+        for count in pointer_distribution:
+            end = start + count
+            pointers = nodes[start:end]
+            keys = [child.keys[0] for child in pointers[1:]]
+            new_node = Node(keys=keys, pointers=pointers, type=NodeType.NON_LEAF, order=self.order)
+            parent_nodes.append(new_node)
+            start = end
+
         if len(parent_nodes) == 1:
             root = parent_nodes[0]
             root.type = NodeType.ROOT
             return root
         else:
-            return self.dense_construct_parents(parent_nodes)
+            return self.construct_parents(parent_nodes, option)
 
-    def dense_construct(self, keys: List[int]) -> Node:
-        n = len(keys)
-        keys.sort()
-        leaf_distribution = self.get_node_dist_dense(len(keys), NodeType.LEAF)
-        num_nodes = len(leaf_distribution)
-        leaves = []
-        start = 0
-        for count in leaf_distribution:
-            end = start + count
-            new_node = Node(keys=keys[start:end], payload=[str(value) for value in keys[start:end]], type=NodeType.LEAF)
-            leaves.append(new_node)
-            start = end
-
-        # leaves = [Node(keys=values[self.order * i:self.order * (i + 1)],
-        #                payload=[str(value) for value in values[self.order * i:self.order * (i + 1)]],
-        #                type=NodeType.LEAF)
-        #           for i in range(num_nodes)]
-
-        for i in range(len(leaves) - 1):
-            leaves[i].sequence_pointer = leaves[i + 1]
-
-        if num_nodes == 1:
-            return leaves[0]  # root
-        else:
-            return self.dense_construct_parents(leaves)
+    # def dense_construct(self, keys: List[int]) -> Node:
+    #
+    #     # n = len(keys)
+    #     keys.sort()
+    #     leaf_distribution = self.get_node_dist_dense(len(keys), NodeType.LEAF)
+    #     num_nodes = len(leaf_distribution)
+    #     leaves = []
+    #     start = 0
+    #     for count in leaf_distribution:
+    #         end = start + count
+    #         new_node = Node(keys=keys[start:end],
+    #                         payload=[str(key) for key in keys[start:end]],
+    #                         type=NodeType.LEAF,
+    #                         order=self.order)
+    #         leaves.append(new_node)
+    #         start = end
+    #
+    #     for i in range(len(leaves) - 1):
+    #         leaves[i].sequence_pointer = leaves[i + 1]
+    #
+    #     if num_nodes == 1:
+    #         return leaves[0]  # root
+    #     else:
+    #         return self.dense_construct_parents(leaves)
 
     def is_valid(self, node: Node = None) -> bool:
         """perform constraint check for the given node and all its child node
@@ -157,9 +204,10 @@ class BPlusTree:
                 return False
 
         # parent key should be larger than left child max key, and no larger than right child min key
-        for i in range(node.get_key_size()):
-            if not min(node.pointers[i].keys) < node.keys[i] <= max(node.pointers[i + 1].keys):
-                return False
+        if node.get_pointer_size() > 0:  # to include single root leaf case, check if the node has child pointers.
+            for i in range(node.get_key_size()):
+                if not min(node.pointers[i].keys) < node.keys[i] <= max(node.pointers[i + 1].keys):
+                    return False
 
         return True
 
@@ -246,7 +294,10 @@ class BPlusTree:
                 if search_range[idx] <= target < search_range[idx + 1]:
                     return self.search(target, node.pointers[idx])
 
-    def fill_type(self, node: Node) -> None:
+    def fill_type(self, node: Node = None) -> None:
+        if node is None:
+            node = self.root
+
         if node == self.root:
             node.type = NodeType.ROOT
         else:
@@ -293,6 +344,15 @@ class BPlusTree:
                 for child in reversed(curr.pointers):
                     stack.append(child)
 
+    def build(self) -> bool:
+        """try to build a tree from given key structure,
+        return if the build is successful and if the resulting tree is valid"""
+        self.fill_order()
+        self.fill_type()
+        self.fill_payload()
+        self.add_sequence_pointers()
+        return self.is_valid()
+
     def get_child_nodes(self) -> List[Node]:
         stack = [self.root]
         child_nodes = []
@@ -313,6 +373,12 @@ class BPlusTree:
                 return curr
             else:
                 curr = curr.pointers[0]
+
+    def get_height(self, node: Node = None) -> int:
+        if not node:
+            return self.root.get_height()
+        else:
+            return node.get_height()
 
     def traversal(self, node: Node = None):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""

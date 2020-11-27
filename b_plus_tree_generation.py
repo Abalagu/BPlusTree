@@ -23,10 +23,8 @@ def get_b_plus_tree(key) -> BPlusTree:
 
 
 tree = get_b_plus_tree('l3')
-root = tree.root
-tree.fill_type(root)
-tree.fill_payload(root)
-tree.add_sequence_pointers()
-tree.search(3)
-ret = tree.range_search(9, 19)
-# BPlusTree()
+
+if tree.build() is not None:
+    tree.search(3)
+    ret = tree.range_search(9, 19)
+# tree.is_valid()

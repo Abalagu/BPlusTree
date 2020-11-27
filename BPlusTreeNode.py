@@ -30,11 +30,20 @@ class Node:
         self.sequence_pointer: Optional[Node] = None
 
     def __repr__(self):
-        hex_cut = -5  # take last 5 chars of hex representation
-        next_addr = hex(id(self.sequence_pointer))[hex_cut:] if self.sequence_pointer else None
+
+        next_addr = self.sequence_pointer.get_id() if self.sequence_pointer else None
 
         return "{} at {}, {} keys, {} pointers, {} payload, next->{}".format(
-            self.type, hex(id(self))[hex_cut:], len(self.keys), len(self.pointers), len(self.payload), next_addr)
+            self.type, self.get_id(), len(self.keys), len(self.pointers), len(self.payload), next_addr)
+
+    def get_id(self, hex_cut=-5):
+        # take last 5 chars of hex representation
+        return hex(id(self))[hex_cut:]
+
+    def describe(self) -> str:
+        """return the keys and hex id of the node"""
+        ret = 'id: {}, keys: {}'.format(self.get_id(), self.keys)
+        return ret
 
     def is_valid(self) -> bool:
         """check if a node conforms with the constraint, check for child and parent consistency goes to b plus tree"""
@@ -90,6 +99,13 @@ class Node:
         else:
             return False
 
+    def is_overflow(self) -> bool:
+        constraint = get_constraint(self.order)[self.type]
+        if self.get_key_size() > constraint['max_keys']:
+            return True
+        else:
+            return False
+
     def is_sorted(self) -> bool:
         return sorted(self.keys) == self.keys
 
@@ -107,6 +123,14 @@ class Node:
             self.payload = [str(key) for key in self.keys]
         else:
             print("setting payload on non-leaf node!")
+
+    def get_height(self) -> int:
+        """path down to a leaf node"""
+        if self.get_pointer_size() == 0:
+            return 0
+        else:
+            return 1 + self.pointers[0].get_height()
+
 
 # this is a static method.  moving the function to other files may easily cause circular import problems.
 def get_constraint(order: int):
