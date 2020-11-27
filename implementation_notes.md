@@ -46,3 +46,10 @@ parent node of key i contains first value of leaf node i+1
 If p1 > n, then divide p1 to multiple nodes, p2 = ceil(p1/n) nodes.
 Repeat such process, till pi <= n, then treat pi as the root node of the constructed b plus tree.
 
+## Sparse B Plus Tree
+
+
+# Data Generation
+use np.random.choice() to generate random data.
+set replace=False to get unique elements within the list.
+
