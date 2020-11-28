@@ -142,31 +142,6 @@ class BPlusTree:
         else:
             return self.construct_parents(parent_nodes, option)
 
-    # def dense_construct(self, keys: List[int]) -> Node:
-    #
-    #     # n = len(keys)
-    #     keys.sort()
-    #     leaf_distribution = self.get_node_dist_dense(len(keys), NodeType.LEAF)
-    #     num_nodes = len(leaf_distribution)
-    #     leaves = []
-    #     start = 0
-    #     for count in leaf_distribution:
-    #         end = start + count
-    #         new_node = Node(keys=keys[start:end],
-    #                         payload=[str(key) for key in keys[start:end]],
-    #                         type=NodeType.LEAF,
-    #                         order=self.order)
-    #         leaves.append(new_node)
-    #         start = end
-    #
-    #     for i in range(len(leaves) - 1):
-    #         leaves[i].sequence_pointer = leaves[i + 1]
-    #
-    #     if num_nodes == 1:
-    #         return leaves[0]  # root
-    #     else:
-    #         return self.dense_construct_parents(leaves)
-
     def is_valid(self, node: Node = None) -> bool:
         """perform constraint check for the given node and all its child node
         handle leaf and non-leaf nodes differently.  check payload for leaf, and pointers for non-leaf.
@@ -379,6 +354,10 @@ class BPlusTree:
             return self.root.get_height()
         else:
             return node.get_height()
+
+    def get_key_layer(self, height: int = 0) -> List[List[int]]:
+        """for default argument, return the leaf keys"""
+        return self.root.get_key_layer(height)
 
     def traversal(self, node: Node = None):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""

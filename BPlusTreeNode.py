@@ -131,6 +131,27 @@ class Node:
         else:
             return 1 + self.pointers[0].get_height()
 
+    def get_key_layer(self, height=None) -> List[List[int]]:
+        """return a list of key lists for nodes at the given height, a horizontal section of keys.
+        height=0 -> leaf keys
+        height=1 -> keys from parents of leaf
+        """
+        ret = []
+        if height is None:
+            return [self.keys]
+
+        if height > self.get_height():
+            print('given height higher than current node')
+            return []
+
+        dig = self.get_height() - height  # dig x steps downward
+        nodes: List[Node] = [self]
+        while dig > 0:
+            nodes = [child for node in nodes for child in node.pointers]
+            dig -= 1
+        else:
+            return [node.keys for node in nodes]
+
 
 # this is a static method.  moving the function to other files may easily cause circular import problems.
 def get_constraint(order: int):
