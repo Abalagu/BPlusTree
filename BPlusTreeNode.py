@@ -1,14 +1,19 @@
 # Created by Luming on 11/27/2020 12:09 PM
+from __future__ import annotations
 from enum import Enum
 from math import ceil, floor
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Tuple
 
 
 class NodeType(Enum):
     NON_LEAF = 'non_leaf',
     LEAF = 'leaf',
     ROOT = 'root',
-    NONE = None,
+    # NONE = None,
+    # NON_LEAF = 'non_leaf',
+    # LEAF = 'leaf',
+    # ROOT = 'root',
+    # NONE = None,
 
 
 class Node:
@@ -50,17 +55,17 @@ class Node:
 
         # bound check, only valid in context, i.e., when order is provided
         if self.order is not None:
-            constraint = get_constraint(self.order)[self.type]
+            constraint = gen_constraint(self.order)[self.type]
 
             if not constraint['min_keys'] <= self.get_key_size() <= constraint['max_keys']:
-                print("keys expect:actual {}-{}:{}".format(constraint['min_keys'], constraint['max_keys'],
-                                                           self.get_key_size()))
+                print("keys expect:actual {}-{}:{}"
+                      .format(constraint['min_keys'], constraint['max_keys'], self.get_key_size()))
                 return False
 
-            if self.type == NodeType.LEAF:
+            if self.is_leaf():  # include single root leaf case
                 if self.get_payload_size() != self.get_key_size():
-                    print(
-                        "LEAF: payload expect:actual = {}:{}".format(self.get_key_size(), self.get_payload_size()))
+                    print("LEAF: payload expect:actual = {}:{}"
+                          .format(self.get_key_size(), self.get_payload_size()))
                     return False
             else:
                 if not constraint['min_pointers'] <= self.get_pointer_size() <= constraint['max_pointers']:
@@ -74,7 +79,7 @@ class Node:
             print('keys not sorted.')
             return False
 
-        if self.type == NodeType.LEAF:
+        if self.is_leaf():
             if self.get_key_size() != self.get_payload_size():
                 return False
         else:
@@ -83,9 +88,15 @@ class Node:
 
         return True
 
+    def is_leaf(self) -> bool:
+        """a node cannot tell if it is the root within the tree, but it can tell that it is the leaf if it has no child
+        replace the use of == NodeType.LEAF if possible.
+        """
+        return self.get_height() == 0
+
     def is_full(self) -> bool:
         """useful when inserting a key.  If a node is full, then insertion will results in node split."""
-        constraint = get_constraint(self.order)[self.type]
+        constraint = gen_constraint(self.order)[self.type]
         if self.get_key_size() == constraint['max_keys']:
             return True
         else:
@@ -93,15 +104,22 @@ class Node:
 
     def is_half_full(self) -> bool:
         """useful when deleting a key.  If a node is half full, then deletion will results in node split."""
-        constraint = get_constraint(self.order)[self.type]
+        constraint = gen_constraint(self.order)[self.type]
         if self.get_key_size() == constraint['min_keys']:
             return True
         else:
             return False
 
     def is_overflow(self) -> bool:
-        constraint = get_constraint(self.order)[self.type]
+        constraint = gen_constraint(self.order)[self.type]
         if self.get_key_size() > constraint['max_keys']:
+            return True
+        else:
+            return False
+
+    def is_underflow(self) -> bool:
+        constraint = gen_constraint(self.order)[self.type]
+        if self.get_key_size() < constraint['min_keys']:
             return True
         else:
             return False
@@ -119,17 +137,79 @@ class Node:
         return len(self.payload)
 
     def set_payload(self) -> None:
-        if self.type == NodeType.LEAF:
+        if self.is_leaf():
             self.payload = [str(key) for key in self.keys]
         else:
             print("setting payload on non-leaf node!")
 
     def get_height(self) -> int:
-        """path down to a leaf node"""
+        """path down to a leaf node
+        height = 0 means it is a leaf node, which accommodates for single root leaf case.
+        """
         if self.get_pointer_size() == 0:
             return 0
         else:
             return 1 + self.pointers[0].get_height()
+
+    def get_index(self, key: int) -> int:
+        """for the given key, find the index to insert that maintains the sorted nature of all the keys
+        find the index such that self.keys[i-1] <= key <= self.keys[i], so that self.keys.insert(key, i) inserts
+        before index i and the list maintains sorted.
+
+        this somehow also works for finding the child node that may store the key value.
+        if there are no child pointers, then it is leaf itself, and it returns a possible slot to insert.
+        if there are child pointers, then it returns the one
+        """
+        comparison = [-float('inf')] + self.keys + [float('inf')]
+        for i in range(len(comparison) - 1):
+            if comparison[i] <= key < comparison[i + 1]:
+                return i
+
+    def insert_key(self, key: int, height: int = 0):
+        """insert key to a leaf node.  When calling directly to a leaf node, possible overflow will not be handled
+        unless its parent node checks.
+        it defaults to inserting to a leaf node.  If specified, insert to a child node.
+        """
+        if self.get_height() < height:
+            raise Exception('cannot reach above. {} < {}'.format(self.get_height(), height))
+
+        if self.get_height() == height:
+            idx = self.get_index(key)
+            self.keys.insert(idx, key)
+            self.payload.insert(idx, str(key))
+            if self.is_overflow():
+                print('child overflow, requires handling by parent')
+        else:
+            idx = self.get_index(key)
+            self.pointers[idx].insert_key(key, height)
+            if self.pointers[idx].is_overflow():
+                new_node = self.pointers[idx].split()
+                # insert to the right of the just split node
+                self.keys.insert(idx + 1, new_node.keys[0])
+                self.pointers.insert(idx + 1, new_node)
+                print('split to two nodes')
+
+    def split(self) -> Node:
+        """split an overflow node and return two nodes.  By default the split is left biased,
+        that the left node has more keys than the right node.  Return the new node that is to be put to the right of
+        the current one, while the original one is the left node."""
+        if self.is_overflow():
+            if self.is_leaf():
+                cut = (self.get_key_size() + 1) // 2
+                new_node = Node(keys=self.keys[cut:], payload=[str(key) for key in self.keys[cut:]], type=NodeType.LEAF,
+                                order=self.order)
+
+                new_node.sequence_pointer = self.sequence_pointer
+                self.sequence_pointer = new_node
+
+                self.keys = self.keys[:cut]
+                self.payload = [str(key) for key in self.keys]
+                return new_node
+            else:  # when splitting an internal node, the median value upgrades to the upper height
+
+                pass
+        else:
+            raise Exception('requesting split on a not overflow node')
 
     def get_key_layer(self, height=None) -> List[List[int]]:
         """return a list of key lists for nodes at the given height, a horizontal section of keys.
@@ -154,7 +234,7 @@ class Node:
 
 
 # this is a static method.  moving the function to other files may easily cause circular import problems.
-def get_constraint(order: int):
+def gen_constraint(order: int):
     """generate b plus tree node attribute constraint. ref: note17 p3"""
     constraint = {
         NodeType.NON_LEAF: {

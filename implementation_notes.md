@@ -44,7 +44,14 @@ when splitting a leaf, copy the middle value up.
 when splitting an internal node, move the middle value up.
 
 
-
+An internal node of height >= 2 should have its key value from: self.keys[i] = self.pointers[i+1].pointers[0].keys[0]
+Otherwise, there would be a missing interval not covered during search, and it can only be mitigated. 
+See case: order=3, num_nodes=13, the root key value is the focus.
+ 
+If search continues through the sequence pointer to the next node.  In this case, one cannot determine whether 
+a node should contain the value, and can only be certain when it continues right-ward, and a larger value is found while
+ the target key is not found.
+ 
 ## Dense B Plus Tree
 Suppose a list of values with length k are provided, and the b plus tree to be constructed is of order n.  
 There must be ceil(k/n) leaf nodes to hold all the values.
@@ -59,7 +66,15 @@ Suppose order=3, and 7 keys are provided.  The tree that meets the constraint wo
 Strategy: suppose the number of remaining keys are n.  If order <= n < 2*order, then  
 
 
+A node split can only happen when it overflows.  If it tries to split when it is exactly full, then the resulting two node will not have sufficient keys to conform to the minimal key constraint.
 
+When taking order as an odd number, the ceiling and flooring operators can be removed from the constraint.
+
+## Biasing of a b plus tree
+Left biasing: when the node overflows after an insertion, it splits to two nodes, such that left has more keys than the right.
+Right biasing: when splitting, right has more keys than the left.
+When making a sparse tree, the left is as sparse as possible, which is right biased; 
+when making a dense tree, the left is as full as possible, which is left biased.
 
 
 ## Sparse B Plus Tree

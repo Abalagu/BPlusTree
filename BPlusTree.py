@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional, List, Dict
 
-from BPlusTreeNode import Node, NodeType, get_constraint
+from BPlusTreeNode import Node, NodeType, gen_constraint
 
 
 class BPlusTree:
@@ -13,9 +13,19 @@ class BPlusTree:
         self.option = option
         self.order: int = order
         self.root: Node = root if root else Node(type=NodeType.ROOT)
-        self.constraint: Dict = get_constraint(self.order)
+        self.constraint: Dict = gen_constraint(self.order)
         if keys:
             self.root = self.construct(keys, option)
+
+    def get_constraint(self) -> List[str]:
+        ret = ['order {}'.format(self.order)]
+        for node_type in NodeType:
+            c = self.constraint[node_type]
+            info = '{}, pointers [{}-{}], keys [{}-{}]' \
+                .format(node_type, c['min_pointers'], c['max_pointers'], c['min_keys'], c['max_keys'])
+            ret.append(info)
+        else:
+            return ret
 
     def get_node_dist_sparse(self, num_nodes: int, node_type: NodeType = NodeType.LEAF) -> List[int]:
         """distribute by sparse"""
@@ -124,13 +134,17 @@ class BPlusTree:
             2. split to nodes if num of keys exceed the order
         """
         # with num_nodes, it requires num_nodes-1 parent keys
+        curr_height = nodes[0].get_height() + 1
         pointer_distribution = self.get_node_dist(len(nodes), NodeType.NON_LEAF, option)
         parent_nodes = []
         start = 0
         for count in pointer_distribution:
             end = start + count
             pointers = nodes[start:end]
-            keys = [child.keys[0] for child in pointers[1:]]
+            if curr_height < 2:
+                keys = [child.keys[0] for child in pointers[1:]]
+            else:  # see discussion on internal node key source with height >= 2
+                keys = [child.pointers[0].keys[0] for child in pointers[1:]]
             new_node = Node(keys=keys, pointers=pointers, type=NodeType.NON_LEAF, order=self.order)
             parent_nodes.append(new_node)
             start = end
@@ -149,15 +163,12 @@ class BPlusTree:
         if not node:
             node = self.root
 
-        if node.type is NodeType.NONE:  # cannot check node constraint without type
-            print("node type not specified")
-            return True
-
         if node.order is None:
             print('node order not set.')
             return False
 
-        if node.type == NodeType.ROOT:
+        if node.type == NodeType.ROOT and node.get_height() > 0:
+            # exclude the single root leaf case, check sequence pointer only when there are multiple levels.
             # check for sequence pointers consistency
             child_nodes = self.get_child_nodes()
 
@@ -179,20 +190,21 @@ class BPlusTree:
                 return False
 
         # parent key should be larger than left child max key, and no larger than right child min key
-        if node.get_pointer_size() > 0:  # to include single root leaf case, check if the node has child pointers.
+        if not node.is_leaf():  # to include single root leaf case, check if the node has child pointers.
             for i in range(node.get_key_size()):
                 if not min(node.pointers[i].keys) < node.keys[i] <= max(node.pointers[i + 1].keys):
+                    print('violate b+tree < x <= rule')
                     return False
 
         return True
 
     def insert(self, key: int):
+        """1. find possible position within a leaf node that may store this key
+        2. insert into the position
+        3. on the upper level, check if it overflows
+        """
         node = self.root
-        if node.type == NodeType.ROOT and node.pointers == []:
-            print("single root in tree")
-
-        while node is not NodeType.LEAF:
-            pass
+        node.insert_key(key)
 
     def range_search(self, left, right, node: Node = None) -> List[str]:
         """return matching elements within closed interval [left, right]
@@ -233,15 +245,9 @@ class BPlusTree:
         if not node:  # default to search under the root
             node = self.root
 
-        if node.type is NodeType.LEAF:
+        if node.is_leaf():
             # assume that parent constraint is met, no check is required in leaf level.
             return node
-            # for idx, key in enumerate(node.keys):
-            #     if key <= target:
-            #         return node
-            # else:
-            #     print("target {} not found.".format(target))
-            #     return None
         else:
             search_range = [-float('inf')] + node.keys + [float('inf')]  # add a dummy infinity number for comparison
             for idx in range(len(search_range) - 1):
@@ -256,18 +262,13 @@ class BPlusTree:
         if not node:
             node = self.root
 
-        if node.type is NodeType.LEAF:
-            for idx, key in enumerate(node.keys):
-                if key == target:
-                    return node.payload[idx]
-            else:
-                print("target {} not found.".format(target))
-                return None
+        leaf = self.search_node(target, node)
+        for idx, key in enumerate(leaf.keys):
+            if key == target:
+                return leaf.payload[idx]
         else:
-            search_range = [-float('inf')] + node.keys + [float('inf')]  # add a dummy infinity number for comparison
-            for idx in range(len(search_range) - 1):
-                if search_range[idx] <= target < search_range[idx + 1]:
-                    return self.search(target, node.pointers[idx])
+            print("target {} not found.".format(target))
+            return None
 
     def fill_type(self, node: Node = None) -> None:
         if node is None:
@@ -288,7 +289,7 @@ class BPlusTree:
         if node is None:
             node = self.root
 
-        if node.type is NodeType.LEAF:
+        if node.is_leaf():
             node.set_payload()
         else:
             for child in node.pointers:
@@ -309,7 +310,7 @@ class BPlusTree:
         prev: Optional[Node] = None
         while stack:
             curr = stack.pop()
-            if curr.type is NodeType.LEAF:
+            if curr.type is NodeType.LEAF:  # here exclude the single root case by checking type, not using .is_leaf()
                 if prev:
                     prev.sequence_pointer = curr
                     prev = curr
@@ -333,7 +334,7 @@ class BPlusTree:
         child_nodes = []
         while stack:
             curr = stack.pop()
-            if curr.type == NodeType.LEAF:
+            if curr.is_leaf():
                 child_nodes.append(curr)
             else:
                 for child in reversed(curr.pointers):
@@ -344,7 +345,7 @@ class BPlusTree:
     def get_first_child(self) -> Node:
         curr = self.root
         while True:
-            if curr.get_pointer_size() == 0:
+            if curr.is_leaf():
                 return curr
             else:
                 curr = curr.pointers[0]
@@ -356,14 +357,15 @@ class BPlusTree:
             return node.get_height()
 
     def get_key_layer(self, height: int = 0) -> List[List[int]]:
-        """for default argument, return the leaf keys"""
+        """for default argument, return the leaf keys.  For leaves, it traverses top down,
+        rather than using sequence pointers"""
         return self.root.get_key_layer(height)
 
     def traversal(self, node: Node = None):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""
         if not node:
             node = self.root
-        if node.type is NodeType.LEAF:
+        if node.is_leaf():
             print(node.payload)
         else:
             for child in node.pointers:
@@ -373,8 +375,26 @@ class BPlusTree:
         stack = [self.root]
         while stack:
             curr = stack.pop()
-            if curr.type is NodeType.LEAF:
+            if curr.is_leaf():
                 print(curr.payload)
             else:
                 for child in reversed(curr.pointers):
                     stack.append(child)
+
+    def test_search(self) -> bool:
+        """For test only.  Large tree may be slow to verify.  Test if all leaf values can be found by search function.
+        this verifies that the tree is built correctly.
+        """
+        curr = self.get_first_child()
+        count = 0
+        while curr:
+            for key in curr.keys:
+                count += 1
+                if self.search(key) is None:
+                    print('key {} exist but not found.'.format(key))
+                    return False
+            else:
+                curr = curr.sequence_pointer
+        else:
+            print('tested {} keys'.format(count))
+            return True
