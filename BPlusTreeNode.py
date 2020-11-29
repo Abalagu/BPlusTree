@@ -2,7 +2,7 @@
 from __future__ import annotations
 from enum import Enum
 from math import ceil, floor
-from typing import List, Any, Optional, Tuple
+from typing import List, Any, Optional, Tuple, Union
 
 
 class NodeType(Enum):
@@ -38,8 +38,8 @@ class Node:
 
         next_addr = self.sequence_pointer.get_id() if self.sequence_pointer else None
 
-        return "{} at {}, {} keys, {} pointers, {} payload, next->{}".format(
-            self.type, self.get_id(), len(self.keys), len(self.pointers), len(self.payload), next_addr)
+        return "{} at {}, {} keys, {} pointers, {} payload, next->{}\nkeys={}".format(
+            self.type, self.get_id(), len(self.keys), len(self.pointers), len(self.payload), next_addr, self.keys)
 
     def get_id(self, hex_cut=-5):
         # take last 5 chars of hex representation
@@ -76,7 +76,7 @@ class Node:
 
         # consistency check
         if not self.is_sorted():
-            print('keys not sorted.')
+            print('keys not sorted. keys: {}'.format(self.keys))
             return False
 
         if self.is_leaf():
@@ -151,6 +151,22 @@ class Node:
         else:
             return 1 + self.pointers[0].get_height()
 
+    def get_first_leaf(self) -> Node:
+        curr = self
+        while True:
+            if curr.is_leaf():
+                return curr
+            else:
+                curr = curr.pointers[0]
+
+    def get_last_leaf(self) -> Node:
+        curr = self
+        while True:
+            if curr.is_leaf():
+                return curr
+            else:
+                curr = curr.pointers[-1]
+
     def get_index(self, key: int) -> int:
         """for the given key, find the index to insert that maintains the sorted nature of all the keys
         find the index such that self.keys[i-1] <= key <= self.keys[i], so that self.keys.insert(key, i) inserts
@@ -165,40 +181,46 @@ class Node:
             if comparison[i] <= key < comparison[i + 1]:
                 return i
 
-    def insert_key(self, key: int, height: int = 0):
+    def insert_key(self, key: int, data: Union[str, Node], height: int = 0):
         """insert key to a leaf node.  When calling directly to a leaf node, possible overflow will not be handled
         unless its parent node checks.
         it defaults to inserting to a leaf node.  If specified, insert to a child node.
+        if inserting to a leaf, data should be string;
+        if inserting to a internal node, data should be the new child Node
         """
         if self.get_height() < height:
             raise Exception('cannot reach above. {} < {}'.format(self.get_height(), height))
 
         if self.get_height() == height:
-            idx = self.get_index(key)
+            idx = self.get_index(key)  # find suitable position
             self.keys.insert(idx, key)
-            self.payload.insert(idx, str(key))
+            if self.is_leaf():
+                self.payload.insert(idx, data)
+            else:
+                self.pointers.insert(idx, data)
             if self.is_overflow():
                 print('child overflow, requires handling by parent')
-        else:
+        else:  # dig down into lower layer, pass data down
             idx = self.get_index(key)
-            self.pointers[idx].insert_key(key, height)
+            self.pointers[idx].insert_key(key, data, height)
             if self.pointers[idx].is_overflow():
                 new_node = self.pointers[idx].split()
-                # insert to the right of the just split node
-                self.keys.insert(idx + 1, new_node.keys[0])
+                # insert to the right of the original node that just got split
                 self.pointers.insert(idx + 1, new_node)
-                print('split to two nodes')
+                self.keys.insert(idx + 1, self.pointers[idx + 1].get_first_leaf().keys[0])
 
     def split(self) -> Node:
         """split an overflow node and return two nodes.  By default the split is left biased,
         that the left node has more keys than the right node.  Return the new node that is to be put to the right of
-        the current one, while the original one is the left node."""
+        the current one, while the original one is the left node.
+
+        The split behavior depends on the height of the node.
+        """
         if self.is_overflow():
             if self.is_leaf():
                 cut = (self.get_key_size() + 1) // 2
                 new_node = Node(keys=self.keys[cut:], payload=[str(key) for key in self.keys[cut:]], type=NodeType.LEAF,
                                 order=self.order)
-
                 new_node.sequence_pointer = self.sequence_pointer
                 self.sequence_pointer = new_node
 
@@ -206,8 +228,15 @@ class Node:
                 self.payload = [str(key) for key in self.keys]
                 return new_node
             else:  # when splitting an internal node, the median value upgrades to the upper height
-
-                pass
+                # should slice child pointers for new node and original node
+                cut = (self.get_key_size() + 1) // 2
+                keys = self.keys
+                pointers = self.pointers
+                new_node = Node(keys=keys[cut + 1:], pointers=pointers[cut + 1:], type=NodeType.NON_LEAF,
+                                order=self.order)
+                self.keys = keys[:cut]
+                self.pointers = pointers[:cut + 1]
+                return new_node
         else:
             raise Exception('requesting split on a not overflow node')
 

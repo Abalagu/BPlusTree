@@ -82,6 +82,13 @@ when making a dense tree, the left is as full as possible, which is left biased.
 cases: 
 order of 3
 
+## split
+example: order=3, full tree that triggers overflow on insert
+full internal node: 3 keys, 4 pointers.  After leaf overflow, a new leaf node is inserted into the internal node,
+making a total of 4 keys, 5 pointers.  The split should result in two nodes, Node(keys[:2], pointers[:3]), Node([3:], pointers[3:])
+
+the node value should be the left-most child first key from its right tree.
+self.key[i] = self.pointers[i+1].first_child.keys[0]
 
 # Data Generation
 use np.random.choice() to generate random data.
