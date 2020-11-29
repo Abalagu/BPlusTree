@@ -1,7 +1,7 @@
 # Created by Luming on 11/26/2020 9:27 PM
 from typing import List
 
-from BPlusTree import get_constraint, NodeType, BPlusTree
+from BPlusTree import gen_constraint, NodeType, BPlusTree
 
 if __name__ == '__main__':
     order = 3

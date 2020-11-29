@@ -168,6 +168,10 @@ class BPlusTree:
             print('node order not set.')
             return False
 
+        if node.is_root():  # test search only in root node
+            if not self.test_search('any'):
+                return False
+
         if node.type == NodeType.ROOT and node.get_height() > 0:
             # exclude the single root leaf case, check sequence pointer only when there are multiple levels.
             # check for sequence pointers consistency
@@ -206,6 +210,11 @@ class BPlusTree:
         """
         node = self.root
         node.insert_key(key, str(key), 0)
+        if self.root.is_overflow():
+            new_node = self.root.split()
+            root_key = new_node.get_first_leaf().keys[0]
+            new_root = Node(keys=[root_key], pointers=[self.root, new_node], type=NodeType.ROOT, order=self.order)
+            self.root = new_root
 
     def range_search(self, left, right, node: Node = None) -> List[str]:
         """return matching elements within closed interval [left, right]

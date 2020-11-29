@@ -1,8 +1,9 @@
 # Created by Luming on 11/27/2020 12:09 PM
 from __future__ import annotations
+
 from enum import Enum
 from math import ceil, floor
-from typing import List, Any, Optional, Tuple, Union
+from typing import List, Any, Optional, Union
 
 
 class NodeType(Enum):
@@ -76,7 +77,7 @@ class Node:
 
         # consistency check
         if not self.is_sorted():
-            print('keys not sorted. keys: {}'.format(self.keys))
+            print('keys not sorted. keys: {}, height: {}'.format(self.keys, self.get_height()))
             return False
 
         if self.is_leaf():
@@ -87,6 +88,9 @@ class Node:
                 return False
 
         return True
+
+    def is_root(self) -> bool:
+        return self.type == NodeType.ROOT
 
     def is_leaf(self) -> bool:
         """a node cannot tell if it is the root within the tree, but it can tell that it is the leaf if it has no child
@@ -198,8 +202,9 @@ class Node:
                 self.payload.insert(idx, data)
             else:
                 self.pointers.insert(idx, data)
-            if self.is_overflow():
-                print('child overflow, requires handling by parent')
+            # if self.is_overflow():
+            #     print('child overflow, requires handling by parent')
+
         else:  # dig down into lower layer, pass data down
             idx = self.get_index(key)
             self.pointers[idx].insert_key(key, data, height)
@@ -207,7 +212,8 @@ class Node:
                 new_node = self.pointers[idx].split()
                 # insert to the right of the original node that just got split
                 self.pointers.insert(idx + 1, new_node)
-                self.keys.insert(idx + 1, self.pointers[idx + 1].get_first_leaf().keys[0])
+                # self.keys.insert(idx + 1, self.pointers[idx + 1].get_first_leaf().keys[0])
+                self.keys.insert(idx, self.pointers[idx + 1].get_first_leaf().keys[0])
 
     def split(self) -> Node:
         """split an overflow node and return two nodes.  By default the split is left biased,
@@ -215,6 +221,8 @@ class Node:
         the current one, while the original one is the left node.
 
         The split behavior depends on the height of the node.
+
+        split of root: root -> leaf, root -> non-leaf
         """
         if self.is_overflow():
             if self.is_leaf():
@@ -226,6 +234,7 @@ class Node:
 
                 self.keys = self.keys[:cut]
                 self.payload = [str(key) for key in self.keys]
+                self.type = NodeType.LEAF  # for single root tree split to leaf case
                 return new_node
             else:  # when splitting an internal node, the median value upgrades to the upper height
                 # should slice child pointers for new node and original node
@@ -236,6 +245,7 @@ class Node:
                                 order=self.order)
                 self.keys = keys[:cut]
                 self.pointers = pointers[:cut + 1]
+                self.type = NodeType.NON_LEAF  # for root split to internal node case
                 return new_node
         else:
             raise Exception('requesting split on a not overflow node')
@@ -245,7 +255,6 @@ class Node:
         height=0 -> leaf keys
         height=1 -> keys from parents of leaf
         """
-        ret = []
         if height is None:
             return [self.keys]
 
