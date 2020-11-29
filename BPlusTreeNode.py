@@ -87,6 +87,13 @@ class Node:
             if self.get_key_size() + 1 != self.get_pointer_size():
                 return False
 
+        # parent key should be larger than left child max key, and no larger than right child min key
+        if not self.is_leaf():  # to include single root leaf case, check if the node has child pointers.
+            for i in range(self.get_key_size()):
+                if not self.pointers[i].get_max_key() < self.keys[i] <= self.pointers[i + 1].get_min_key():
+                    print('key {} violate b+tree < x <= rule'.format(self.keys[i]))
+                    return False
+
         return True
 
     def is_root(self) -> bool:
@@ -155,6 +162,17 @@ class Node:
         else:
             return 1 + self.pointers[0].get_height()
 
+    def get_constraint(self) -> List[str]:
+        ret = ['order {}'.format(self.order)]
+        constraint = gen_constraint(self.order)
+        for node_type in NodeType:
+            c = constraint[node_type]
+            info = '{}, pointers [{}-{}], keys [{}-{}]' \
+                .format(node_type, c['min_pointers'], c['max_pointers'], c['min_keys'], c['max_keys'])
+            ret.append(info)
+        else:
+            return ret
+
     def get_first_leaf(self) -> Node:
         curr = self
         while True:
@@ -171,6 +189,20 @@ class Node:
             else:
                 curr = curr.pointers[-1]
 
+    def get_min_key(self) -> int:
+        return self.get_first_leaf().keys[0]
+
+    def get_max_key(self) -> int:
+        return self.get_last_leaf().keys[-1]
+
+    def get_num_leaves(self) -> int:
+        return len(self.get_leaf_nodes())
+
+    def get_num_keys(self) -> int:
+        """get the number of keys in leaf nodes"""
+        leaves = self.get_leaf_nodes()
+        return sum([leaf.get_key_size() for leaf in leaves])
+
     def get_index(self, key: int) -> int:
         """for the given key, find the index to insert that maintains the sorted nature of all the keys
         find the index such that self.keys[i-1] <= key <= self.keys[i], so that self.keys.insert(key, i) inserts
@@ -184,6 +216,74 @@ class Node:
         for i in range(len(comparison) - 1):
             if comparison[i] <= key < comparison[i + 1]:
                 return i
+
+    def get_leaf_nodes(self) -> List[Node]:
+        stack = [self]
+        child_nodes = []
+        while stack:
+            curr = stack.pop()
+            if curr.is_leaf():
+                child_nodes.append(curr)
+            else:
+                for child in reversed(curr.pointers):
+                    stack.append(child)
+        else:
+            return child_nodes
+
+    def search_node(self, target: int) -> Optional[Node]:
+        """given target key value, return the leaf node that possibly contains the value,
+        Such leaf node either contains the value, or should contain if empty space remains within.
+        When entering a leaf node, if a key value smaller than the target is found,
+        then it confirms that such node can hold the target value,
+        assuming that it does not violate the parent constraint.
+        """
+        if self.is_leaf():
+            # assume that parent constraint is met, no check is required in leaf level.
+            return self
+        else:
+            search_range = [-float('inf')] + self.keys + [float('inf')]  # add a dummy infinity number for comparison
+            for idx in range(len(search_range) - 1):
+                if search_range[idx] <= target < search_range[idx + 1]:
+                    return self.pointers[idx].search_node(target)
+
+    def search(self, target: int) -> Optional[Any, None]:
+        """search for exact position of key within the given node, return the
+        in actual application, return
+        ref: note17, p4
+        """
+        leaf = self.search_node(target)
+        for idx, key in enumerate(leaf.keys):
+            if key == target:
+                return leaf.payload[idx]
+        else:
+            print("target {} not found.".format(target))
+            return None
+
+    def range_search(self, left, right) -> List[str]:
+        """return matching elements within closed interval [left, right]
+        1. find position for left
+        2. direct elements within interval to the output
+        3. search terminates when element larger than right is encountered
+        ref: note17, p17
+        note that search procedure returns nothing if the target is not found.
+        However, in range search, one expects to find the smallest element that's larger than the left bound,
+        then continue searching till the right bound.
+        if the node is not provided, it defaults to search under the root.
+        """
+        ret = []
+        leaf = self.search_node(left)
+        while leaf:
+            for idx, key in enumerate(leaf.keys):
+                if key < left:
+                    continue
+                elif left <= key <= right:
+                    ret.append(leaf.payload[idx])
+                else:
+                    return ret
+            else:
+                leaf = leaf.sequence_pointer
+        else:
+            return ret
 
     def insert_key(self, key: int, data: Union[str, Node], height: int = 0):
         """insert key to a leaf node.  When calling directly to a leaf node, possible overflow will not be handled
@@ -214,6 +314,24 @@ class Node:
                 self.pointers.insert(idx + 1, new_node)
                 # self.keys.insert(idx + 1, self.pointers[idx + 1].get_first_leaf().keys[0])
                 self.keys.insert(idx, self.pointers[idx + 1].get_first_leaf().keys[0])
+
+    def traversal(self):
+        """traverse down from the given node to the leaf nodes, print out leaf payload"""
+        if self.is_leaf():
+            print(self.payload)
+        else:
+            for child in self.pointers:
+                child.traversal()
+
+    def traversal_iterative(self):
+        stack = [self]
+        while stack:
+            curr = stack.pop()
+            if curr.is_leaf():
+                print(curr.payload)
+            else:
+                for child in reversed(curr.pointers):
+                    stack.append(child)
 
     def split(self) -> Node:
         """split an overflow node and return two nodes.  By default the split is left biased,
