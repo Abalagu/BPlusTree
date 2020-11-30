@@ -155,6 +155,11 @@ class BPlusTree:
         handle leaf and non-leaf nodes differently.  check payload for leaf, and pointers for non-leaf.
         """
         node = self.root
+        if node.is_leaf() and node.is_root():
+            if node.get_key_size() == 0 and node.get_payload_size() == 0 and node.get_pointer_size() == 0:
+                # exception: allow empty root node
+                print('empty root node')
+                return True
 
         if node.order is None:
             print('node order not set.')
@@ -167,10 +172,14 @@ class BPlusTree:
         if node.is_root() and not node.is_leaf():
             # exclude the single root leaf case, check sequence pointer only when there are multiple levels.
             # check for sequence pointers consistency
+            if self.get_leaf_keys('sequential') != self.get_leaf_keys('topdown'):
+                print('leaf key inconsistent: top down != sequential')
+                return False
+
             leaf_nodes = self.get_leaf_nodes()
             curr = self.get_first_leaf()
             seq_child_nodes = []
-            while curr:
+            while curr:  # compare sequential vs. top down result
                 seq_child_nodes.append(curr)
                 curr = curr.sequence_pointer
             else:
@@ -181,10 +190,6 @@ class BPlusTree:
         if not node.is_valid():
             return False
 
-        for child in node.pointers:
-            if not child.is_valid():
-                return False
-
         return True
 
     def insert(self, key: int):
@@ -192,13 +197,23 @@ class BPlusTree:
         2. insert into the position
         3. on the upper level, check if it overflows
         """
-        node = self.root
-        node.insert_key(key, str(key), 0)
+        self.root.insert_key(key, str(key), 0)
         if self.root.is_overflow():
             new_node = self.root.split()
             root_key = new_node.get_first_leaf().keys[0]
             new_root = Node(keys=[root_key], pointers=[self.root, new_node], type=NodeType.ROOT, order=self.order)
             self.root = new_root
+
+    def delete(self, key: int) -> None:
+        if self.search(key) is None:
+            print('key {} does not exist.'.format(key))
+        else:
+            self.root.delete_key(key)
+            if self.root.is_singular():
+                self.root = self.root.pointers[0]
+                self.root.type = NodeType.ROOT
+            if not self.is_valid():
+                raise Exception('deleting key {} results in error'.format(key))
 
     def range_search(self, left, right) -> List[str]:
         return self.root.range_search(left, right)
@@ -273,7 +288,7 @@ class BPlusTree:
 
     def get_num_keys(self) -> int:
         """get the number of keys in leaf nodes"""
-        return self.root.get_num_keys()
+        return self.root.get_num_keys_total()
 
     def get_leaf_nodes(self) -> List[Node]:
         return self.root.get_leaf_nodes()
@@ -291,6 +306,9 @@ class BPlusTree:
     def get_max_key(self) -> int:
         return self.root.get_max_key()
 
+    def get_leaf_keys(self, option='sequential') -> List[int]:
+        return self.root.get_leaf_keys(option)
+
     def get_height(self) -> int:
         return self.root.get_height()
 
@@ -298,6 +316,11 @@ class BPlusTree:
         """for default argument, return the leaf keys.  For leaves, it traverses top down,
         rather than using sequence pointers"""
         return self.root.get_key_layer(height)
+
+    def print_layers(self):
+        for i in reversed(range(self.get_height() + 1)):
+            print('H{}: {}'.format(i, self.get_key_layer(i)))
+            print()
 
     def traversal(self, node: Node = None):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""
@@ -329,7 +352,7 @@ class BPlusTree:
                 curr = curr.sequence_pointer
         else:
             if ret:
-                print('tested {} keys'.format(count))
+                # print('tested {} keys'.format(count))
                 return True
             else:
                 return False

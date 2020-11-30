@@ -87,12 +87,24 @@ class Node:
             if self.get_key_size() + 1 != self.get_pointer_size():
                 return False
 
+        # check that all child are of the same height.
+        if not self.is_leaf():
+            ref_height = self.pointers[0].get_height()
+            if not all([child.get_height() == ref_height for child in self.pointers]):
+                print('child height inconsistent')
+                print(self)
+                return False
+
         # parent key should be larger than left child max key, and no larger than right child min key
         if not self.is_leaf():  # to include single root leaf case, check if the node has child pointers.
             for i in range(self.get_key_size()):
                 if not self.pointers[i].get_max_key() < self.keys[i] <= self.pointers[i + 1].get_min_key():
                     print('key {} violate b+tree < x <= rule'.format(self.keys[i]))
                     return False
+
+        for child in self.pointers:
+            if not child.is_valid():
+                return False
 
         return True
 
@@ -104,6 +116,13 @@ class Node:
         replace the use of == NodeType.LEAF if possible.
         """
         return self.get_height() == 0
+
+    def is_singular(self) -> bool:
+        """check if the node contains only a single child.  in this case, the child should replace the parent"""
+        return self.get_key_size() == 0 and self.get_pointer_size() == 1
+
+    def is_empty(self) -> bool:
+        return self.get_key_size() == 0
 
     def is_full(self) -> bool:
         """useful when inserting a key.  If a node is full, then insertion will results in node split."""
@@ -118,6 +137,33 @@ class Node:
         constraint = gen_constraint(self.order)[self.type]
         if self.get_key_size() == constraint['min_keys']:
             return True
+        else:
+            return False
+
+    def is_plenty(self) -> bool:
+        """return True if the node contains more than min_keys, which is suitable for redistribution"""
+        constraint = gen_constraint(self.order)[self.type]
+        if constraint['min_keys'] < self.get_key_size() <= constraint['max_keys']:
+            # not sure if the max key limit should be enforced.  trying to redistribute an overflow node?
+            return True
+        else:
+            return False
+
+    def has_left_sibling(self, idx: int) -> bool:
+        """return true if the idx-th child has a left sibling.  check sibling condition at parent level.
+        precondition for redistribution and merge.
+        return True only when it is an internal node, the index is within child range, and it has left sibling.
+
+        reject negative index in this usage, avoid tail indexing.
+        """
+        if not self.is_leaf() and 0 <= idx < self.get_pointer_size():
+            return idx > 0
+        else:
+            return False
+
+    def has_right_sibling(self, idx: int) -> bool:
+        if not self.is_leaf() and 0 <= idx < self.get_pointer_size():
+            return idx < self.get_pointer_size() - 1
         else:
             return False
 
@@ -189,6 +235,28 @@ class Node:
             else:
                 curr = curr.pointers[-1]
 
+    def get_leaf_keys(self, option='sequential') -> List[int]:
+        """return all leaf keys under the current node."""
+        if option == 'sequential':
+            return self.get_leaf_keys_sequential()
+        elif option == 'topdown':
+            return self.get_leaf_keys_top_down()
+        else:
+            raise Exception('unknown option')
+
+    def get_leaf_keys_top_down(self) -> List[int]:
+        leaves = self.get_leaf_nodes()
+        return [key for leaf in leaves for key in leaf.keys]
+
+    def get_leaf_keys_sequential(self) -> List[int]:
+        curr = self.get_first_leaf()
+        ret = []
+        while curr:
+            ret.extend(curr.keys)
+            curr = curr.sequence_pointer
+        else:
+            return ret
+
     def get_min_key(self) -> int:
         return self.get_first_leaf().keys[0]
 
@@ -198,10 +266,17 @@ class Node:
     def get_num_leaves(self) -> int:
         return len(self.get_leaf_nodes())
 
-    def get_num_keys(self) -> int:
+    def get_num_keys_total(self) -> int:
         """get the number of keys in leaf nodes"""
         leaves = self.get_leaf_nodes()
         return sum([leaf.get_key_size() for leaf in leaves])
+
+    def get_key_idx(self, key: int) -> Optional[int]:
+        """search for exact position of a given key.  If not found, return None."""
+        if key in self.keys:
+            return self.keys.index(key)
+        else:
+            return None
 
     def get_index(self, key: int) -> int:
         """for the given key, find the index to insert that maintains the sorted nature of all the keys
@@ -218,6 +293,7 @@ class Node:
                 return i
 
     def get_leaf_nodes(self) -> List[Node]:
+        """top down approach"""
         stack = [self]
         child_nodes = []
         while stack:
@@ -332,6 +408,112 @@ class Node:
             else:
                 for child in reversed(curr.pointers):
                     stack.append(child)
+
+    def merge(self, idx: int) -> bool:
+        """at parent perspective, merge node idx+1 into node idx. return True if success else False
+        there is no difference between left merge and right merge.  node1, node2, node3.  node1 right merge into node2
+        is the same as node2 left merge into node1.  Therefore one implementation is sufficient.
+
+        merge idx+1 into node idx.  For right most leaf with no next node, call merge(idx-1) if it has left sibling.
+        """
+        node = self.pointers[idx]
+        if not self.has_right_sibling(idx) or self.pointers[idx + 1].is_full():
+            return False
+        else:
+            next_node = self.pointers[idx + 1]
+
+        # node.keys.extend(next_node.keys)
+        # self.keys.pop(idx)
+        # self.pointers.pop(idx + 1)
+
+        if node.is_leaf():
+            node.keys.extend(next_node.keys)
+            node.payload.extend(next_node.payload)
+            self.keys.pop(idx)
+            self.pointers.pop(idx + 1)
+            node.sequence_pointer = next_node.sequence_pointer
+            # when merge results in parent having 0 key 1 pointer, make the merged node as self.
+            # however, this can only be handled by self.parent.
+        else:
+            node.keys.append(next_node.get_min_key())
+            node.keys.extend(next_node.keys)
+            node.pointers.extend(next_node.pointers)
+            self.keys.pop(idx)
+            self.pointers.pop(idx + 1)
+
+        return True
+
+    def redistribute(self, idx: int) -> bool:
+        """redistribute a key from a sibling of the idx-th child to it.  return True if success else False"""
+        node = self.pointers[idx]
+        if self.has_left_sibling(idx) and self.pointers[idx - 1].is_plenty():
+            left_sibling = self.pointers[idx - 1]
+            if node.is_leaf():
+                # max key of the left sibling, redistribute to be the min key of the node
+                moving_key = left_sibling.keys.pop()
+                moving_payload = left_sibling.payload.pop()
+                node.keys.insert(0, moving_key)
+                node.payload.insert(0, moving_payload)
+                self.keys[idx - 1] = moving_key  # min key from the right sub-tree
+            else:
+                new_key = node.get_min_key()
+                moving_child = left_sibling.pointers.pop()
+                left_sibling.keys.pop()  # simply remove the right most key
+                node.pointers.insert(0, moving_child)
+                node.keys.insert(0, new_key)
+                self.keys[idx - 1] = node.get_min_key()  # update since node gets a new left most leaf
+            return True
+
+        elif self.has_right_sibling(idx) and self.pointers[idx + 1].is_plenty():
+            right_sibling = self.pointers[idx + 1]
+
+            if node.is_leaf():
+                new_key = right_sibling.keys.pop(0)  # min key of the right sibling
+                node.keys.append(new_key)
+                moving_payload = right_sibling.payload.pop(0)
+                node.payload.append(moving_payload)
+                self.keys[idx] = right_sibling.get_min_key()
+            else:
+                moving_child = right_sibling.pointers.pop(0)
+                right_sibling.keys.pop(0)
+                node.pointers.append(moving_child)
+                node.keys.append(moving_child.get_min_key())
+                # right_sibling.keys[0] = right_sibling.pointers[1].get_min_key()
+                self.keys[idx] = right_sibling.get_min_key()
+            return True
+
+        else:  # redistribution fails, try merge with siblings.
+            return False
+
+    def delete_key(self, key: int) -> None:
+        if self.is_leaf():
+            idx = self.get_key_idx(key)
+            if idx is not None:
+                self.keys.pop(idx)
+                self.payload.pop(idx)
+            else:
+                print('key to delete: {} not found.'.format(key))
+        else:
+            node_idx = self.get_index(key)
+            self.pointers[node_idx].delete_key(key)
+
+            # after recursion, the operated node may become singular.
+            # if self.pointers[node_idx].is_singular():
+            #     self.pointers[node_idx] = self.pointers[node_idx].pointers[0]
+            # should fix height difference by rotating a higher node key.
+            # same as redistribution
+
+            if self.pointers[node_idx].is_underflow():
+                # priority: redistribution > merge
+                # try merge with neighbor nodes
+                if self.redistribute(node_idx):
+                    return
+                elif self.merge(node_idx):  # merge curr and right
+                    return
+                elif self.merge(node_idx - 1):  # merge left and curr
+                    return
+                else:  # singular case,
+                    print('singular case, cannot redistribute nor merge')
 
     def split(self) -> Node:
         """split an overflow node and return two nodes.  By default the split is left biased,
