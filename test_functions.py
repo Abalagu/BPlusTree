@@ -36,22 +36,16 @@ def gen_new_key(tree: BPlusTree) -> int:
         new_key = np.random.choice(range(min_key - 10, max_key + 10), 1)[0]
         if tree.search(new_key) is None:
             return new_key
-        # else:
-        #     count -= 1  # handle the case where values in random range are all in the current tree
-    # else:
-    #     raise Exception('all values in range may exist in the tree')
 
 
 def random_insert(tree: BPlusTree) -> None:
     new_key = gen_new_key(tree)
     tree.insert(new_key)
-    print('insert new key {}'.format(new_key))
 
 
 def random_delete(tree: BPlusTree) -> None:
     key = np.random.choice(tree.get_leaf_keys(), 1)[0]
     tree.delete(key)
-    print('delete key {}'.format(key))
 
 
 def random_operation(tree: BPlusTree):
@@ -64,45 +58,29 @@ def random_operation(tree: BPlusTree):
 def operations(tree: BPlusTree):
     for i in range(2):
         random_insert(tree)
-    else:
-        if not tree.is_valid():
-            raise
 
     for i in range(2):
         random_delete(tree)
-    else:
-        if not tree.is_valid():
-            raise
 
     for i in range(5):
         random_operation(tree)
-    else:
-        if not tree.is_valid():
-            raise
-
-
-# def test_tear_down(tree: BPlusTree):
-#     trees = test_init()
-#     for tree in trees:
-#         delete_random_iterative(tree)
-#
-#     pass
 
 
 def experiment():
     trees = test_init()
-    for tree in trees:
-        print(tree)
+    for idx, tree in enumerate(trees):
+        print('\nSTARTING TEST ON TREE:\n{}\n'.format(tree))
         operations(tree)
-        # random_operation(tree)
         if not tree.is_valid():
             raise Exception('tree not valid after random op')
+        else:
+            print('TREE PASSED TEST! {}/{}\n{}\n\n'.format(idx + 1, len(trees), tree))
     else:
-        print('tree pass random operation test')
+        print('ALL TREES PASSED RANDOM OPERATION TEST! {}/{}'.format(len(trees), len(trees)))
 
 
 def gen_trivial_tree(order: int, num_nodes: int, option: str = 'dense') -> BPlusTree:
-    keys = list(range(1, 2 * num_nodes, 2))
+    keys = list(range(1, 2 * num_nodes, 2))  # create keys with odd numbers, leaving interval in between for insertion
     # keys = list(range(1, 1 + num_nodes))
     tree = BPlusTree(order, keys=keys, option=option)
     if tree.build():
@@ -153,7 +131,6 @@ def delete_random_iterative(tree: BPlusTree):
     keys = tree.get_leaf_keys()
     np.random.shuffle(keys)
     for key in keys:
-        # print('deleting key {}...'.format(key))
         tree.delete(key)
         if not tree.is_valid():
             raise Exception('deleting key {} results in error'.format(key))

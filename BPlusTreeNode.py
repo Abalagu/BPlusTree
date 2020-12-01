@@ -10,11 +10,6 @@ class NodeType(Enum):
     NON_LEAF = 'non_leaf',
     LEAF = 'leaf',
     ROOT = 'root',
-    # NONE = None,
-    # NON_LEAF = 'non_leaf',
-    # LEAF = 'leaf',
-    # ROOT = 'root',
-    # NONE = None,
 
 
 class Node:
@@ -39,8 +34,9 @@ class Node:
 
         next_addr = self.sequence_pointer.get_id() if self.sequence_pointer else None
 
-        return "{} at {}, {} keys, {} pointers, {} payload, next->{}\nkeys={}".format(
-            self.type, self.get_id(), len(self.keys), len(self.pointers), len(self.payload), next_addr, self.keys)
+        return "\n{} in memory {}, {} keys, {} pointers, {} payload, at height {}, next->{}\nkeys={}\n\n".format(
+            self.type, self.get_id(), len(self.keys), len(self.pointers), len(self.payload), self.get_height(),
+            next_addr, self.keys)
 
     def get_id(self, hex_cut=-5):
         # take last 5 chars of hex representation
@@ -373,24 +369,30 @@ class Node:
             raise Exception('cannot reach above. {} < {}'.format(self.get_height(), height))
 
         if self.get_height() == height:
+            print('INSERTING KEY: {}'.format(key))
+            print('BEFORE INSERTION: {}'.format(self))
             idx = self.get_index(key)  # find suitable position
             self.keys.insert(idx, key)
             if self.is_leaf():
                 self.payload.insert(idx, data)
             else:
                 self.pointers.insert(idx, data)
-            # if self.is_overflow():
-            #     print('child overflow, requires handling by parent')
+            print('AFTER INSERTION: {}'.format(self))
 
         else:  # dig down into lower layer, pass data down
             idx = self.get_index(key)
             self.pointers[idx].insert_key(key, data, height)
             if self.pointers[idx].is_overflow():
+                print('INSERTION OVERFLOW')
+                print('NODE BEFORE SPLIT: {}'.format(self.pointers[idx]))
                 new_node = self.pointers[idx].split()
+                print('NODE AFTER SPLIT: {}'.format(self.pointers[idx]))
+                print('NEW NODE: {}'.format(new_node))
                 # insert to the right of the original node that just got split
+                print('NODE BEFORE INSERT: {}'.format(self))
                 self.pointers.insert(idx + 1, new_node)
-                # self.keys.insert(idx + 1, self.pointers[idx + 1].get_first_leaf().keys[0])
                 self.keys.insert(idx, self.pointers[idx + 1].get_first_leaf().keys[0])
+                print('NODE AFTER INSERT: {}'.format(self))
 
     def traversal(self):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""
@@ -410,6 +412,12 @@ class Node:
                 for child in reversed(curr.pointers):
                     stack.append(child)
 
+    def print_layers(self):
+        print('TREE ROOTED UNDER: {}'.format(self))
+        for i in reversed(range(self.get_height() + 1)):
+            print('H{}: {}'.format(i, self.get_key_layer(i)))
+            print()
+
     def merge(self, idx: int) -> bool:
         """at parent perspective, merge node idx+1 into node idx. return True if success else False
         there is no difference between left merge and right merge.  node1, node2, node3.  node1 right merge into node2
@@ -422,10 +430,9 @@ class Node:
             return False
         else:
             next_node = self.pointers[idx + 1]
-
-        # node.keys.extend(next_node.keys)
-        # self.keys.pop(idx)
-        # self.pointers.pop(idx + 1)
+            print('FIX BY MERGING')
+            print('LEFT NODE BEFORE MERGE: {}'.format(self.pointers[idx]))
+            print('RIGHT NODE BEFORE MERGE: {}'.format(next_node))
 
         if node.is_leaf():
             node.keys.extend(next_node.keys)
@@ -442,13 +449,16 @@ class Node:
             self.keys.pop(idx)
             self.pointers.pop(idx + 1)
 
+        print('NODE AFTER MERGE: {}'.format(self.pointers[idx]))
         return True
 
     def redistribute(self, idx: int) -> bool:
         """redistribute a key from a sibling of the idx-th child to it.  return True if success else False"""
         node = self.pointers[idx]
         if self.has_left_sibling(idx) and self.pointers[idx - 1].is_plenty():
+            print('FIX BY BORROW FROM LEFT SIBLING')
             left_sibling = self.pointers[idx - 1]
+            print('LEFT SIBLING BEFORE BORROW: {}'.format(left_sibling))
             if node.is_leaf():
                 # max key of the left sibling, redistribute to be the min key of the node
                 moving_key = left_sibling.keys.pop()
@@ -463,11 +473,15 @@ class Node:
                 node.pointers.insert(0, moving_child)
                 node.keys.insert(0, new_key)
                 self.keys[idx - 1] = node.get_min_key()  # update since node gets a new left most leaf
+
+            print('LEFT SIBLING AFTER BORROW: {}'.format(left_sibling))
+            print('UNDERFLOW NODE AFTER BORROW: {}'.format(self.pointers[idx]))
             return True
 
         elif self.has_right_sibling(idx) and self.pointers[idx + 1].is_plenty():
             right_sibling = self.pointers[idx + 1]
-
+            print('FIX BY BORROW FROM RIGHT')
+            print('RIGHT SIBLING BEFORE BORROW: {}'.format(right_sibling))
             if node.is_leaf():
                 new_key = right_sibling.keys.pop(0)  # min key of the right sibling
                 node.keys.append(new_key)
@@ -481,6 +495,9 @@ class Node:
                 node.keys.append(moving_child.get_min_key())
                 # right_sibling.keys[0] = right_sibling.pointers[1].get_min_key()
                 self.keys[idx] = right_sibling.get_min_key()
+
+            print('RIGHT SIBLING AFTER BORROW: {}'.format(right_sibling))
+            print('UNDERFLOW NODE AFTER BORROW: {}'.format(self.pointers[idx]))
             return True
 
         else:  # redistribution fails, try merge with siblings.
@@ -488,23 +505,23 @@ class Node:
 
     def delete_key(self, key: int) -> None:
         if self.is_leaf():
+            print('NODE BEFORE DELETE: {}'.format(self))
             idx = self.get_key_idx(key)
             if idx is not None:
                 self.keys.pop(idx)
                 self.payload.pop(idx)
+                print('NODE AFTER DELETE: {}'.format(self))
             else:
                 print('key to delete: {} not found.'.format(key))
         else:
             node_idx = self.get_index(key)
             self.pointers[node_idx].delete_key(key)
 
-            # after recursion, the operated node may become singular.
-            # if self.pointers[node_idx].is_singular():
-            #     self.pointers[node_idx] = self.pointers[node_idx].pointers[0]
             # should fix height difference by rotating a higher node key.
             # same as redistribution
-
             if self.pointers[node_idx].is_underflow():
+                print('UNDERFLOW CAUSED BY DELETE')
+                print('NODE BEFORE FIX: {}'.format(self.pointers[node_idx]))
                 # priority: redistribution > merge
                 # try merge with neighbor nodes
                 if self.redistribute(node_idx):

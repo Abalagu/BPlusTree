@@ -138,3 +138,5 @@ If a node has insufficient keys after deletion, there are three ways to handle.
 
 It is obvious that in any case, one of the three conditions will be satisfied.  
 
+https://youtu.be/QrbaQDSuxIM?t=97
+It checks leftward and tries to borrow a key from the left node, which is not exactly its left sibling, since it is rooted under another parent.  

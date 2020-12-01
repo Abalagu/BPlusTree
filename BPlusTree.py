@@ -12,7 +12,7 @@ class BPlusTree:
     def __init__(self, order: int, root: Node = None, keys: List[int] = None, option='dense'):
         self.option = option
         self.order: int = order
-        self.root: Node = root if root else Node(type=NodeType.ROOT)
+        self.root: Node = root if root else Node(type=NodeType.ROOT, order=self.order)
         self.constraint: Dict = gen_constraint(self.order)
         if keys:
             self.root = self.construct(keys, option)
@@ -198,20 +198,29 @@ class BPlusTree:
         3. on the upper level, check if it overflows
         """
         self.root.insert_key(key, str(key), 0)
+
         if self.root.is_overflow():
+            print('root overflows.  left and right node: ')
             new_node = self.root.split()
             root_key = new_node.get_first_leaf().keys[0]
             new_root = Node(keys=[root_key], pointers=[self.root, new_node], type=NodeType.ROOT, order=self.order)
+            print('new root: {}'.format(new_root))
+            print('left child: {}'.format(self))
+            print('right child: {}'.format(new_node))
             self.root = new_root
 
     def delete(self, key: int) -> None:
         if self.search(key) is None:
             print('key {} does not exist.'.format(key))
         else:
+            print('DELETING KEY: {}'.format(key))
             self.root.delete_key(key)
             if self.root.is_singular():
+                print('SINGULAR ROOT, ELEVATE CHILD. ')
+                print('OLD ROOT: \n{}\n'.format(self.root))
                 self.root = self.root.pointers[0]
                 self.root.type = NodeType.ROOT
+                print('NEW ROOT: \n{}\n'.format(self.root))
 
     def range_search(self, left, right) -> List[str]:
         return self.root.range_search(left, right)
@@ -253,8 +262,6 @@ class BPlusTree:
             curr = stack.pop()
             curr.order = self.order
             stack.extend(curr.pointers[::-1])
-            # for child in reversed(curr.pointers):
-            #     stack.append(child)
 
     def add_sequence_pointers(self) -> None:
         """add sequence pointers between child leaf nodes in place, do for the whole tree"""
@@ -316,9 +323,7 @@ class BPlusTree:
         return self.root.get_key_layer(height)
 
     def print_layers(self):
-        for i in reversed(range(self.get_height() + 1)):
-            print('H{}: {}'.format(i, self.get_key_layer(i)))
-            print()
+        self.root.print_layers()
 
     def traversal(self):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""
