@@ -59,6 +59,7 @@ class Node:
             constraint = gen_constraint(self.order)[self.type]
 
             if not constraint['min_keys'] <= self.get_key_size() <= constraint['max_keys']:
+                print(self)
                 print("keys expect:actual {}-{}:{}"
                       .format(constraint['min_keys'], constraint['max_keys'], self.get_key_size()))
                 return False
@@ -332,7 +333,7 @@ class Node:
             if key == target:
                 return leaf.payload[idx]
         else:
-            print("target {} not found.".format(target))
+            # print("target {} not found.".format(target))
             return None
 
     def range_search(self, left, right) -> List[str]:
@@ -538,7 +539,8 @@ class Node:
                 return new_node
             else:  # when splitting an internal node, the median value upgrades to the upper height
                 # should slice child pointers for new node and original node
-                cut = (self.get_key_size() + 1) // 2
+                # cut = (self.get_key_size() + 1) // 2
+                cut = self.get_key_size() // 2
                 keys = self.keys
                 pointers = self.pointers
                 new_node = Node(keys=keys[cut + 1:], pointers=pointers[cut + 1:], type=NodeType.NON_LEAF,

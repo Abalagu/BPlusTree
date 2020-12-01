@@ -1,9 +1,12 @@
 # Created by Luming on 11/28/2020 10:22 PM
-from numpy import random
-from BPlusTree import BPlusTree
 
-keys = random.choice(range(1000), 100, replace=False).tolist()
-tree = BPlusTree(3, keys=keys)
-if tree.build():
-    if tree.test_search():
-        print('success')
+from test_functions import *
+
+tree = gen_trivial_tree(2, 20, 'dense')
+tree.insert(47)
+tree.insert(41)
+assert tree.is_valid()
+
+# random_insert(tree)
+# assert tree.is_valid()
+# tree.insert(-1)

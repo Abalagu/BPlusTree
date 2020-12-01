@@ -212,8 +212,6 @@ class BPlusTree:
             if self.root.is_singular():
                 self.root = self.root.pointers[0]
                 self.root.type = NodeType.ROOT
-            if not self.is_valid():
-                raise Exception('deleting key {} results in error'.format(key))
 
     def range_search(self, left, right) -> List[str]:
         return self.root.range_search(left, right)
@@ -322,7 +320,7 @@ class BPlusTree:
             print('H{}: {}'.format(i, self.get_key_layer(i)))
             print()
 
-    def traversal(self, node: Node = None):
+    def traversal(self):
         """traverse down from the given node to the leaf nodes, print out leaf payload"""
         return self.root.traversal()
 
